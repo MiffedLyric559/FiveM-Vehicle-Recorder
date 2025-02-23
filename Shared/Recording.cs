@@ -14,6 +14,7 @@ using CitizenFX.Core.Native;
 using CitizenFX.Core.UI;
 using FxEvents;
 using RecM.Client.Utils;
+using RecM.Client.Menus;
 
 #endif
 
@@ -70,12 +71,12 @@ namespace RecM
         /// <summary>
         /// The current recording playback start time.
         /// </summary>
-        private static int _currRecordingPlaybackStartTime;
+        private static float _currRecordingPlaybackStartTime;
 
         /// <summary>
         /// The current recording duration.
         /// </summary>
-        private static int _currRecordingDuration;
+        private static float _currRecordingDuration;
 
         /// <summary>
         /// The current positions saved throughout the current recording.
@@ -101,6 +102,16 @@ namespace RecM
         /// This has to store the client's original cinematic cam state.
         /// </summary>
         private static bool _cinematicCamBlocked;
+
+        /// <summary>
+        /// The playback speeds.
+        /// </summary>
+        private static List<float> _playbackSpeeds = [ -16, -8, -4, -2, -1.75f, -1.5f, -1.25f, -1, -0.75f, -0.5f, -0.25f, 0, 0.25f, 0.50f, 0.75f, 1, 1.25f, 1.50f, 1.75f, 2, 4, 8, 16 ];
+
+        /// <summary>
+        /// The current playback speed index.
+        /// </summary>
+        private static int _currPlaybackSpeedIndex = _playbackSpeeds.IndexOf(1);
 
 #endif
 
@@ -456,9 +467,10 @@ namespace RecM
             // Play the recording until it's done
             if (API.IsPlaybackGoingOnForVehicle(veh.Handle))
             {
-                var curr = TimeSpan.FromMilliseconds(_currRecordingPlaybackStartTime - Game.GameTime).ToString(@"mm\:ss");
+                var playbackSpeed = GetPlaybackSpeedValue();
+                var curr = TimeSpan.FromMilliseconds((_currRecordingPlaybackStartTime - Game.GameTime) * playbackSpeed).ToString(@"mm\:ss");
                 var dur = TimeSpan.FromMilliseconds(_currRecordingDuration).ToString(@"mm\:ss");
-                Screen.ShowSubtitle($"{curr} / {dur}", 0);
+                Screen.ShowSubtitle(playbackSpeed == 0 ? "Paused" : $"{(playbackSpeed < 0 && (_currRecordingPlaybackStartTime - Game.GameTime) <= 0 ? "00:00" : curr)} / {dur}", 0);
                 for (int i = 0; i < _currRecordingPositions.Count; i++)
                 {
                     Vector3 recPos = _currRecordingPositions[i];
@@ -795,7 +807,10 @@ namespace RecM
                 _currRecordingPlaybackStartTime = Game.GameTime;
 
                 // The total duration of the recording
-                _currRecordingDuration = (int)Function.Call<float>(Hash.GET_TOTAL_DURATION_OF_VEHICLE_RECORDING, id, name);
+                _currRecordingDuration = Function.Call<float>(Hash.GET_TOTAL_DURATION_OF_VEHICLE_RECORDING, id, name);
+
+                // Make sure to set the playback speed
+                SwitchPlaybackSpeed(_currPlaybackSpeedIndex);
 
                 // Store the positions every 120ms of the recording
                 for (float time = 0; time <= _currRecordingDuration; time += 120)
@@ -908,6 +923,62 @@ namespace RecM
 
             "Recording stopped!".Log(true);
         }
+
+        #endregion
+
+        #region Get playback speed list
+
+
+        #endregion
+
+        #region Get playback speed index
+
+        public static int GetPlaybackSpeedIndex() => _currPlaybackSpeedIndex;
+
+        #endregion
+
+        #region Get playback speed value
+
+        public static float GetPlaybackSpeedValue() => _playbackSpeeds[_currPlaybackSpeedIndex];
+
+        #endregion
+
+        #region Get playback speed name
+
+        public static string GetPlaybackSpeedName() => $"{_playbackSpeeds[_currPlaybackSpeedIndex]}x";
+
+        #endregion
+
+        #region Switch playback speed
+
+        public static void SwitchPlaybackSpeed(int index)
+        {
+            _currPlaybackSpeedIndex = index;
+            if (_currPlaybackSpeedIndex >= _playbackSpeeds.Count)
+            {
+                _currPlaybackSpeedIndex = _playbackSpeeds.Count - 1;
+                return;
+            }
+            else if (_currPlaybackSpeedIndex < 0)
+            {
+                _currPlaybackSpeedIndex = 0;
+                return;
+            }
+            string speedName = GetPlaybackSpeedName();
+            float speedValue = GetPlaybackSpeedValue();
+            if (Game.PlayerPed.IsInVehicle() && Game.PlayerPed.CurrentVehicle != null && Game.PlayerPed.CurrentVehicle.Exists())
+                API.SetPlaybackSpeed(Game.PlayerPed.CurrentVehicle.Handle, speedValue);
+            RecordingManager.SwitchPlaybackSpeedDisplayBtn.Text = $"Speed {speedName}";
+            ScaleformUI.Main.InstructionalButtons.ForceUpdate();
+            if (speedValue != 0)
+            {
+
+            }
+
+            var posInRecording = API.GetTimePositionInRecording(Game.PlayerPed.CurrentVehicle.Handle) / (speedValue == 0 ? 1 : speedValue);
+            _currRecordingPlaybackStartTime = Game.GameTime - posInRecording;
+        }
+
 
         #endregion
 
