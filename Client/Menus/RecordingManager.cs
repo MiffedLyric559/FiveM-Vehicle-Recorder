@@ -30,6 +30,7 @@ namespace RecM.Client.Menus
         private static Dictionary<string, Vector4> _lastCustomRecordings = null;
         private static int _lastVanillaRecordingsMenuIndex;
         private static int _lastCustomRecordingsMenuIndex;
+        public static InstructionalButton SwitchPlaybackSpeedDisplayBtn;
 
         #endregion
 
@@ -244,14 +245,6 @@ namespace RecM.Client.Menus
                                 vanillaRecordings[name].Add(id);
                         }
 
-                        var stopRecordingBtn = new InstructionalButton(Control.Jump, Control.Jump, "Stop Playback");
-                        vanillaRecordingsMenu.InstructionalButtons.Add(stopRecordingBtn);
-                        stopRecordingBtn.OnControlSelected += (_) =>
-                        {
-                            Recording.StopRecordingPlayback();
-                        };
-
-                        var filterBtn = new InstructionalButton(Control.Duck, Control.Duck, "Filter");
                         vanillaRecordingsMenu.InstructionalButtons.Add(filterBtn);
                         filterBtn.OnControlSelected += async (_) =>
                         {
@@ -267,6 +260,30 @@ namespace RecM.Client.Menus
 
                             vanillaRecordingsMenu.FilterMenuItems((mb) => mb.Label.ToLower().Contains(filter.ToLower()));*/
                         };
+
+                        var stopRecordingBtn = new InstructionalButton(Control.Jump, Control.Jump, "Stop Playback");
+                        vanillaRecordingsMenu.InstructionalButtons.Add(stopRecordingBtn);
+                        stopRecordingBtn.OnControlSelected += (_) =>
+                        {
+                            Recording.StopRecordingPlayback();
+                        };
+
+                        var switchPlaybackSpeedNextBtn = new InstructionalButton(Control.FrontendRb, Control.FrontendLs, $"Faster");
+                        vanillaRecordingsMenu.InstructionalButtons.Add(switchPlaybackSpeedNextBtn);
+                        switchPlaybackSpeedNextBtn.OnControlSelected += (_) =>
+                        {
+                            Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() + 1);
+                        };
+
+                        var switchPlaybackSpeedPrevBtn = new InstructionalButton(Control.FrontendLb, Control.FrontendRs, $"Slower");
+                        vanillaRecordingsMenu.InstructionalButtons.Add(switchPlaybackSpeedPrevBtn);
+                        switchPlaybackSpeedPrevBtn.OnControlSelected += (_) =>
+                        {
+                            Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() - 1);
+                        };
+
+                        SwitchPlaybackSpeedDisplayBtn = new InstructionalButton([], $"Speed {Recording.GetPlaybackSpeedName()}");
+                        vanillaRecordingsMenu.InstructionalButtons.Add(SwitchPlaybackSpeedDisplayBtn);
 
                         foreach (var recording in vanillaRecordings)
                         {
@@ -342,6 +359,9 @@ namespace RecM.Client.Menus
                             recordItem.Activated += (sender, e) =>
                             {
                                 sender.SwitchTo(recordItemMenu, inheritOldMenuParams: true);
+
+                                // Update the playback speed display (best place to do it)
+                                ((UIMenuDynamicListItem)recordItemMenu.MenuItems.FirstOrDefault(x => x.Label.Equals("Playback Speed"))).CurrentListItem = Recording.GetPlaybackSpeedName();
                             };
 
                             UIMenuItem playItem = new UIMenuItem("Play", "Play the recording.");
@@ -350,6 +370,27 @@ namespace RecM.Client.Menus
                             {
                                 Recording.PlayRecording(id, $"{name}_{model}_", model, pos);
                             };
+
+                            var playbackSpeedItem = new UIMenuDynamicListItem("Playback Speed", "Change the playback speed.", Recording.GetPlaybackSpeedName(), async (item, dir) =>
+                            {
+                                if (dir == ChangeDirection.Left)
+                                {
+                                    if (Recording.GetPlaybackSpeedIndex() == 0)
+                                        return Recording.GetPlaybackSpeedName();
+
+                                    Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() - 1);
+                                }
+                                else if (dir == ChangeDirection.Right)
+                                {
+                                    if (Recording.GetPlaybackSpeedIndex() == Recording.GetPlaybackSpeedNameList().Count - 1)
+                                        return Recording.GetPlaybackSpeedName();
+
+                                    Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() + 1);
+                                }
+
+                                return Recording.GetPlaybackSpeedName();
+                            });
+                            recordItemMenu.AddItem(playbackSpeedItem);
 
                             UIMenuItem stopItem = new UIMenuItem("Stop", "Stop the recording.");
                             recordItemMenu.AddItem(stopItem);
