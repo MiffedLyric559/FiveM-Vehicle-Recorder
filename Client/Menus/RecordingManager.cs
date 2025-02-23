@@ -317,6 +317,8 @@ namespace RecM.Client.Menus
                                 listItem.Items = listItem.Items.OrderBy(x => x).ToList();
                             }
                         }
+
+                        vanillaRecordingsMenu.MenuItems.Sort((a, b) => { return a.Label.ToLower().CompareTo(b.Label.ToLower()); });
                     }
                     else
                     {
