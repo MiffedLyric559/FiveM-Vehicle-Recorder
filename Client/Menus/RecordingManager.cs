@@ -243,20 +243,34 @@ namespace RecM.Client.Menus
                                 vanillaRecordings[name].Add(id);
                         }
 
+                        var filterBtn = new InstructionalButton(Control.LookBehind, Control.LookBehind, "Filter");
                         vanillaRecordingsMenu.InstructionalButtons.Add(filterBtn);
                         filterBtn.OnControlSelected += async (_) =>
                         {
-                            "This feature is currently disabled due to a flaw in the menu API.".Alert(true);
-                            /*string filter = await Tools.GetUserInput("Enter a word (leave blank to reset)", 10);
+                            //"This feature is currently disabled due to a flaw in the menu API.".Alert(true);
+                            string filter = await Tools.GetUserInput("Enter a word (leave blank to reset)", 20);
+
                             if (string.IsNullOrEmpty(filter))
                             {
-                                // Only real way to tell with the api whether the menu is filtered or not
+                                // Check if the menu is filtered
                                 if (vanillaRecordingsMenu._unfilteredMenuItems.Count > 0)
+                                {
+                                    "The filter has been reset.".Alert();
                                     vanillaRecordingsMenu.ResetFilter();
+                                }
+
                                 return;
                             }
 
-                            vanillaRecordingsMenu.FilterMenuItems((mb) => mb.Label.ToLower().Contains(filter.ToLower()));*/
+                            // Check if the menu is filtered
+                            if (vanillaRecordingsMenu._unfilteredMenuItems.Count > 0)
+                            {
+                                "The filter has been reset.".Alert();
+                                vanillaRecordingsMenu.ResetFilter();
+                            }
+
+                            // Filter the menu items
+                            vanillaRecordingsMenu.FilterMenuItems((mb) => mb.Label.ToLower().Contains(filter.ToLower()));
                         };
 
                         var stopRecordingBtn = new InstructionalButton(Control.Jump, Control.Jump, "Stop Playback");
