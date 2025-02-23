@@ -657,7 +657,9 @@ namespace RecM
             // Now let's load the vanilla recordings
             var json = API.LoadResourceFile("RecM_records", "vanilla.json");
             if (string.IsNullOrEmpty(json))
-                vanilla = Client.data.yvrs.backupVanillaYvrs;
+            {
+                vanilla = [];
+            }
             else
             {
                 foreach (var item in Json.Parse<JArray>(json))
