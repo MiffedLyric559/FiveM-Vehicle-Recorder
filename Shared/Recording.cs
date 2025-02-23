@@ -779,6 +779,7 @@ namespace RecM
                 {
                     IsLoadingRecording = false;
                     "The recording failed to load.".Error(true);
+                    Main.Instance.DetachTick(RecordingCheckerThread);
                     return;
                 }
 
