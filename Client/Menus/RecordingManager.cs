@@ -60,9 +60,7 @@ namespace RecM.Client.Menus
 
             menu = new UIMenu("RecM", "Vehicle Recording Utility", new PointF(960, 20), "recm_textures", "recm_banner", true);
             menu.ControlDisablingEnabled = false;
-            menu.EnableAnimation = false;
-            menu.BuildingAnimation = MenuBuildingAnimation.NONE;
-            menu.Enabled3DAnimations = false;
+            menu.MaxItemsOnScreen = 15;
 
             #region Create recordings
 
