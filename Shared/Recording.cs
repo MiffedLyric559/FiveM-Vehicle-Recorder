@@ -929,6 +929,13 @@ namespace RecM
 
         #region Get playback speed list
 
+        public static List<float> GetPlaybackSpeedValueList() => _playbackSpeeds;
+
+        #endregion
+
+        #region Get playback speed list names
+
+        public static List<string> GetPlaybackSpeedNameList() => _playbackSpeeds.Select(x => $"{x}x").ToList();
 
         #endregion
 
