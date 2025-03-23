@@ -1,10 +1,9 @@
-using System;
-using System.Threading.Tasks;
 using CitizenFX.Core;
 using CitizenFX.Core.Native;
-using CitizenFX.Core.UI;
 using FxEvents;
 using RecM.Client.Menus;
+using System;
+using System.Threading.Tasks;
 
 namespace RecM.Client
 {
@@ -35,7 +34,7 @@ namespace RecM.Client
 
         public Main()
         {
-            EventDispatcher.Initalize("de5WwZCPjcmx5kH2f97a", "HqDMBdqUQvFsx8ivY0sb", "gcNmjnWvG3VQRJMYXV50", "VjqQBxkkV3r4wd105W24");
+            EventHub.Initialize();
             Instance = this;
             ExportList = Exports;
             string debugMode = API.GetResourceMetadata(API.GetCurrentResourceName(), "recm_debug_mode", 0);
@@ -61,7 +60,7 @@ namespace RecM.Client
         public void AddEventHandler(string eventName, Delegate @delegate, bool oldMethod = false)
         {
             if (!oldMethod)
-                EventDispatcher.Mount(eventName, @delegate);
+                EventHub.Mount(eventName, FxEvents.Shared.Binding.Remote, @delegate);
             else
                 EventHandlers.Add(eventName, @delegate);
         }
@@ -100,4 +99,4 @@ namespace RecM.Client
 
         #endregion
     }
-} 
+}

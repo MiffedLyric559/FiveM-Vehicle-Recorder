@@ -10,8 +10,7 @@
       <Compile Remove="..\Shared\Dummy.cs" />
     </ItemGroup>
     <ItemGroup>
-      <PackageReference Include="FxEvents.FiveM.Client" Version="2.9.1" />
-      <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+      <PackageReference Include="FxEvents.FiveM.Client" Version="3.0.1" />
     </ItemGroup>
     <ItemGroup>
       <Reference Include="Newtonsoft.Json">

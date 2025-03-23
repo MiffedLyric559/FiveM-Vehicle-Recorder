@@ -1,8 +1,7 @@
-using System;
-using System.Threading.Tasks;
 using CitizenFX.Core;
 using CitizenFX.Core.Native;
 using FxEvents;
+using System;
 
 namespace RecM.Server
 {
@@ -22,7 +21,7 @@ namespace RecM.Server
 
         public Main()
         {
-            EventDispatcher.Initalize("de5WwZCPjcmx5kH2f97a", "HqDMBdqUQvFsx8ivY0sb", "gcNmjnWvG3VQRJMYXV50", "VjqQBxkkV3r4wd105W24");
+            EventHub.Initialize();
             Instance = this;
             Clients = Players;
             ExportList = Exports;
@@ -47,7 +46,7 @@ namespace RecM.Server
         public void AddEventHandler(string eventName, Delegate @delegate, bool oldMethod = false)
         {
             if (!oldMethod)
-                EventDispatcher.Mount(eventName, @delegate);
+                EventHub.Mount(eventName, FxEvents.Shared.Binding.Remote, @delegate);
             else
                 EventHandlers.Add(eventName, @delegate);
         }
