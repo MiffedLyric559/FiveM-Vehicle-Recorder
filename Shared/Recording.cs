@@ -544,7 +544,7 @@ namespace RecM
             if (subtitleLines.Count > 0)
                 Screen.ShowSubtitle(string.Join("\n", subtitleLines), 0);
             else
-                Screen.HideSubtitleThisFrame();
+                API.ClearPrints();
         }
 
         #endregion
