@@ -127,7 +127,6 @@ namespace RecM.Client.Menus
         private static void OpenPlaybackModeMenu(UIMenu parentMenu, string displayName, int recordingId, string recordingName, string model = null, Vector4? pos = null, RecordingMetadata metadata = null)
         {
             var optionsMenu = new UIMenu(displayName, "Playback Options");
-            optionsMenu.ParentMenu = parentMenu;
             optionsMenu.ControlDisablingEnabled = false;
 
             var takeControlItem = new UIMenuItem("Take Control", "Spawn or reuse your vehicle and play the recording from the driver's seat.");
