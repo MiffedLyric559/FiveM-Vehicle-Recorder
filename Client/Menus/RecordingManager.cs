@@ -358,13 +358,25 @@ namespace RecM.Client.Menus
 
                         var filterBtn = new InstructionalButton(Control.LookBehind, Control.LookBehind, "Filter");
                         vanillaRecordingsMenu.InstructionalButtons.Add(filterBtn);
-                        filterBtn.OnControlSelected += async (_) =>
+                        filterBtn.OnControlSelected += (button) =>
                         {
-                            //"This feature is currently disabled due to a flaw in the menu API.".Alert(true);
-                            string filter = await Tools.GetUserInput("Enter a word (leave blank to reset)", 20);
-
-                            if (string.IsNullOrEmpty(filter))
+                            _ = Task.Run(async () =>
                             {
+                                //"This feature is currently disabled due to a flaw in the menu API.".Alert(true);
+                                string filter = await Tools.GetUserInput("Enter a word (leave blank to reset)", 20);
+
+                                if (string.IsNullOrEmpty(filter))
+                                {
+                                    // Check if the menu is filtered
+                                    if (vanillaRecordingsMenu._unfilteredMenuItems.Count > 0)
+                                    {
+                                        "The filter has been reset.".Alert();
+                                        vanillaRecordingsMenu.ResetFilter();
+                                    }
+
+                                    return;
+                                }
+
                                 // Check if the menu is filtered
                                 if (vanillaRecordingsMenu._unfilteredMenuItems.Count > 0)
                                 {
@@ -372,39 +384,35 @@ namespace RecM.Client.Menus
                                     vanillaRecordingsMenu.ResetFilter();
                                 }
 
-                                return;
-                            }
+                                // Filter the menu items
+                                vanillaRecordingsMenu.FilterMenuItems((mb) => mb.Label.ToLower().Contains(filter.ToLower()));
+                            });
 
-                            // Check if the menu is filtered
-                            if (vanillaRecordingsMenu._unfilteredMenuItems.Count > 0)
-                            {
-                                "The filter has been reset.".Alert();
-                                vanillaRecordingsMenu.ResetFilter();
-                            }
-
-                            // Filter the menu items
-                            vanillaRecordingsMenu.FilterMenuItems((mb) => mb.Label.ToLower().Contains(filter.ToLower()));
+                            return button;
                         };
 
                         var stopRecordingBtn = new InstructionalButton(Control.Jump, Control.Jump, "Stop Playback");
                         vanillaRecordingsMenu.InstructionalButtons.Add(stopRecordingBtn);
-                        stopRecordingBtn.OnControlSelected += (_) =>
+                        stopRecordingBtn.OnControlSelected += (button) =>
                         {
                             _ = Recording.StopRecordingPlayback();
+                            return button;
                         };
 
                         var switchPlaybackSpeedNextBtn = new InstructionalButton(Control.FrontendRb, Control.FrontendLs, $"Faster");
                         vanillaRecordingsMenu.InstructionalButtons.Add(switchPlaybackSpeedNextBtn);
-                        switchPlaybackSpeedNextBtn.OnControlSelected += (_) =>
+                        switchPlaybackSpeedNextBtn.OnControlSelected += (button) =>
                         {
                             Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() + 1);
+                            return button;
                         };
 
                         var switchPlaybackSpeedPrevBtn = new InstructionalButton(Control.FrontendLb, Control.FrontendRs, $"Slower");
                         vanillaRecordingsMenu.InstructionalButtons.Add(switchPlaybackSpeedPrevBtn);
-                        switchPlaybackSpeedPrevBtn.OnControlSelected += (_) =>
+                        switchPlaybackSpeedPrevBtn.OnControlSelected += (button) =>
                         {
                             Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() - 1);
+                            return button;
                         };
 
                         SwitchPlaybackSpeedDisplayBtn = new InstructionalButton([], $"Speed {Recording.GetPlaybackSpeedName()}");
