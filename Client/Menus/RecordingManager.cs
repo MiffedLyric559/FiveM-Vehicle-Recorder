@@ -323,8 +323,9 @@ namespace RecM.Client.Menus
                 savedRecordingsMenuItem.Description = "Loading...";
 
                 // Get the recordings
-                (List<string> vanilla, Dictionary<string, RecordingListing> custom) = await Recording.GetRecordings();
-                custom ??= [];
+                var recordings = await Recording.GetRecordings();
+                var vanilla = recordings.Item1;
+                var custom = recordings.Item2 ?? new Dictionary<string, RecordingListing>();
 
                 savedRecordingsMenuItem.Enabled = true;
                 savedRecordingsMenuItem.Description = "This menu contains all the saved recordings.";
