@@ -27,7 +27,7 @@ namespace RecM.Client.Menus
         private static UIMenuItem _saveRecordingMenuItem;
         private static UIMenuItem _createRecordingsMenuItem;
         private static List<string> _lastVanillaRecordings = null;
-        private static Dictionary<string, Vector4> _lastCustomRecordings = null;
+        private static Dictionary<string, RecordingListing> _lastCustomRecordings = null;
         private static int _lastVanillaRecordingsMenuIndex;
         private static int _lastCustomRecordingsMenuIndex;
         public static InstructionalButton SwitchPlaybackSpeedDisplayBtn;
@@ -212,7 +212,7 @@ namespace RecM.Client.Menus
                 savedRecordingsMenuItem.Description = "Loading...";
 
                 // Get the recordings
-                (List<string> vanilla, Dictionary<string, Vector4> custom) = await Recording.GetRecordings();
+                (List<string> vanilla, Dictionary<string, RecordingListing> custom) = await Recording.GetRecordings();
 
                 savedRecordingsMenuItem.Enabled = true;
                 savedRecordingsMenuItem.Description = "This menu contains all the saved recordings.";
@@ -346,93 +346,97 @@ namespace RecM.Client.Menus
 
                 #region Custom recordings
 
-                if (_lastCustomRecordings == null || !_lastCustomRecordings.SequenceEqual(custom))
+                _lastCustomRecordingsMenuIndex = 0;
+                _lastCustomRecordings = custom;
+                customRecordingsMenu.Clear();
+                if (custom.Count > 0)
                 {
-                    _lastCustomRecordingsMenuIndex = 0;
-                    _lastCustomRecordings = custom;
-                    customRecordingsMenu.Clear();
-                    if (custom.Count > 0)
-                    {
-                        customRecordingsMenuItem.Enabled = true;
-                        customRecordingsMenuItem.Description = "This menu contains all the custom recording data.";
-                        customRecordingsMenuItem.SetRightBadge(BadgeIcon.NONE);
+                    customRecordingsMenuItem.Enabled = true;
+                    customRecordingsMenuItem.Description = "This menu contains all the custom recording data.";
+                    customRecordingsMenuItem.SetRightBadge(BadgeIcon.NONE);
 
-                        foreach (var recording in custom)
+                    foreach (var recording in custom.ToList())
+                    {
+                        var name = recording.Key.Split('_')[0];
+                        var model = recording.Key.Split('_')[1];
+                        var id = int.Parse(recording.Key.Split('_')[2]);
+                        var recordingInfo = recording.Value;
+                        var pos = recordingInfo.Start;
+
+                        UIMenuItem recordItem = new UIMenuItem(name, $"Vehicle: {model}\nID: {id}");
+                        recordItem.ItemData = recording;
+                        recordItem.SetRightLabel("→→→");
+                        customRecordingsMenu.AddItem(recordItem);
+                        UIMenu recordItemMenu = new UIMenu(name, name);
+                        recordItemMenu.ControlDisablingEnabled = false;
+                        recordItem.Activated += (sender, e) =>
                         {
-                            var name = recording.Key.Split('_')[0];
-                            var model = recording.Key.Split('_')[1];
-                            var id = int.Parse(recording.Key.Split('_')[2]);
-                            var pos = recording.Value;
+                            sender.SwitchTo(recordItemMenu, inheritOldMenuParams: true);
 
-                            UIMenuItem recordItem = new UIMenuItem(name, $"Vehicle: {model}\nID: {id}");
-                            recordItem.ItemData = recording;
-                            recordItem.SetRightLabel("→→→");
-                            customRecordingsMenu.AddItem(recordItem);
-                            UIMenu recordItemMenu = new UIMenu(name, name);
-                            recordItemMenu.ControlDisablingEnabled = false;
-                            recordItem.Activated += (sender, e) =>
+                            // Update the playback speed display (best place to do it)
+                            ((UIMenuDynamicListItem)recordItemMenu.MenuItems.FirstOrDefault(x => x.Label.Equals("Playback Speed"))).CurrentListItem = Recording.GetPlaybackSpeedName();
+                        };
+
+                        UIMenuItem playItem = new UIMenuItem("Play", "Play the recording.");
+                        recordItemMenu.AddItem(playItem);
+                        playItem.Activated += async (sender, e) =>
+                        {
+                            Recording.PlayRecording(id, $"{name}_{model}_", model, pos, recordingInfo.Metadata);
+                        };
+
+                        var playbackSpeedItem = new UIMenuDynamicListItem("Playback Speed", "Change the playback speed.", Recording.GetPlaybackSpeedName(), async (item, dir) =>
+                        {
+                            if (dir == ChangeDirection.Left)
                             {
-                                sender.SwitchTo(recordItemMenu, inheritOldMenuParams: true);
+                                if (Recording.GetPlaybackSpeedIndex() == 0)
+                                    return Recording.GetPlaybackSpeedName();
 
-                                // Update the playback speed display (best place to do it)
-                                ((UIMenuDynamicListItem)recordItemMenu.MenuItems.FirstOrDefault(x => x.Label.Equals("Playback Speed"))).CurrentListItem = Recording.GetPlaybackSpeedName();
-                            };
-
-                            UIMenuItem playItem = new UIMenuItem("Play", "Play the recording.");
-                            recordItemMenu.AddItem(playItem);
-                            playItem.Activated += async (sender, e) =>
+                                Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() - 1);
+                            }
+                            else if (dir == ChangeDirection.Right)
                             {
-                                Recording.PlayRecording(id, $"{name}_{model}_", model, pos);
-                            };
+                                if (Recording.GetPlaybackSpeedIndex() == Recording.GetPlaybackSpeedNameList().Count - 1)
+                                    return Recording.GetPlaybackSpeedName();
 
-                            var playbackSpeedItem = new UIMenuDynamicListItem("Playback Speed", "Change the playback speed.", Recording.GetPlaybackSpeedName(), async (item, dir) =>
+                                Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() + 1);
+                            }
+
+                            return Recording.GetPlaybackSpeedName();
+                        });
+                        recordItemMenu.AddItem(playbackSpeedItem);
+
+                        UIMenuItem stopItem = new UIMenuItem("Stop", "Stop the recording.");
+                        recordItemMenu.AddItem(stopItem);
+                        stopItem.Activated += (sender, e) =>
+                        {
+                            Recording.StopRecordingPlayback();
+                        };
+
+                        UIMenuItem deleteItem = new UIMenuItem("~r~Delete", "Delete the recording.");
+                        recordItemMenu.AddItem(deleteItem);
+                        deleteItem.Activated += async (sender, e) =>
+                        {
+                            var success = await Recording.DeleteRecording(name, model);
+                            if (success)
                             {
-                                if (dir == ChangeDirection.Left)
+                                custom.Remove(recording.Key);
+                                customRecordingsMenu.RemoveItemAt(customRecordingsMenu.MenuItems.IndexOf(recordItem));
+                                sender.GoBack();
+                                if (custom.Count == 0)
                                 {
-                                    if (Recording.GetPlaybackSpeedIndex() == 0)
-                                        return Recording.GetPlaybackSpeedName();
-
-                                    Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() - 1);
+                                    customRecordingsMenuItem.Enabled = false;
+                                    customRecordingsMenuItem.Description = "This menu contains no custom recordings.";
+                                    customRecordingsMenuItem.SetRightBadge(BadgeIcon.LOCK);
                                 }
-                                else if (dir == ChangeDirection.Right)
-                                {
-                                    if (Recording.GetPlaybackSpeedIndex() == Recording.GetPlaybackSpeedNameList().Count - 1)
-                                        return Recording.GetPlaybackSpeedName();
-
-                                    Recording.SwitchPlaybackSpeed(Recording.GetPlaybackSpeedIndex() + 1);
-                                }
-
-                                return Recording.GetPlaybackSpeedName();
-                            });
-                            recordItemMenu.AddItem(playbackSpeedItem);
-
-                            UIMenuItem stopItem = new UIMenuItem("Stop", "Stop the recording.");
-                            recordItemMenu.AddItem(stopItem);
-                            stopItem.Activated += (sender, e) =>
-                            {
-                                Recording.StopRecordingPlayback();
-                            };
-
-                            UIMenuItem deleteItem = new UIMenuItem("~r~Delete", "Delete the recording.");
-                            recordItemMenu.AddItem(deleteItem);
-                            deleteItem.Activated += async (sender, e) =>
-                            {
-                                var success = await Recording.DeleteRecording(name, model);
-                                if (success)
-                                {
-                                    sender.GoBack();
-                                    customRecordingsMenu.GoBack();
-                                    savedRecordingsMenu.GoBack();
-                                }
-                            };
-                        }
+                            }
+                        };
                     }
-                    else
-                    {
-                        customRecordingsMenuItem.Enabled = false;
-                        customRecordingsMenuItem.Description = "This menu contains no custom recordings.";
-                        customRecordingsMenuItem.SetRightBadge(BadgeIcon.LOCK);
-                    }
+                }
+                else
+                {
+                    customRecordingsMenuItem.Enabled = false;
+                    customRecordingsMenuItem.Description = "This menu contains no custom recordings.";
+                    customRecordingsMenuItem.SetRightBadge(BadgeIcon.LOCK);
                 }
 
                 #endregion
