@@ -642,13 +642,13 @@ namespace RecM
             vehicleData.PearlescentColor = pearlescentColor;
             vehicleData.WheelColor = wheelColor;
 
-            int dashboardColor = 0;
-            if (API.GetVehicleDashboardColour(vehicle.Handle, ref dashboardColor))
-                vehicleData.DashboardColor = dashboardColor;
+            int dashboardColor = -1;
+            API.GetVehicleDashboardColour(vehicle.Handle, ref dashboardColor);
+            vehicleData.DashboardColor = dashboardColor;
 
-            int interiorColor = 0;
-            if (API.GetVehicleInteriorColour(vehicle.Handle, ref interiorColor))
-                vehicleData.InteriorColor = interiorColor;
+            int interiorColor = -1;
+            API.GetVehicleInteriorColour(vehicle.Handle, ref interiorColor);
+            vehicleData.InteriorColor = interiorColor;
 
             vehicleData.HasCustomPrimaryColor = API.GetIsVehiclePrimaryColourCustom(vehicle.Handle);
             if (vehicleData.HasCustomPrimaryColor)
@@ -761,11 +761,11 @@ namespace RecM
             API.SetVehicleColours(vehicle.Handle, vehicleData.PrimaryColor, vehicleData.SecondaryColor);
             API.SetVehicleExtraColours(vehicle.Handle, vehicleData.PearlescentColor, vehicleData.WheelColor);
 
-            if (vehicleData.DashboardColor.HasValue)
-                API.SetVehicleDashboardColour(vehicle.Handle, vehicleData.DashboardColor.Value);
+            if (vehicleData.DashboardColor is int recordedDashboardColor && recordedDashboardColor != -1)
+                API.SetVehicleDashboardColour(vehicle.Handle, recordedDashboardColor);
 
-            if (vehicleData.InteriorColor.HasValue)
-                API.SetVehicleInteriorColour(vehicle.Handle, vehicleData.InteriorColor.Value);
+            if (vehicleData.InteriorColor is int recordedInteriorColor && recordedInteriorColor != -1)
+                API.SetVehicleInteriorColour(vehicle.Handle, recordedInteriorColor);
 
             if (vehicleData.HasCustomPrimaryColor && vehicleData.CustomPrimaryColor?.Length == 3)
                 API.SetVehicleCustomPrimaryColour(vehicle.Handle, vehicleData.CustomPrimaryColor[0], vehicleData.CustomPrimaryColor[1], vehicleData.CustomPrimaryColor[2]);
