@@ -9,6 +9,7 @@ using CitizenFX.Core;
 using CitizenFX.Core.Native;
 using FxEvents;
 using FxEvents.Shared.TypeExtensions;
+using RecM.Client;
 using RecM.Client.Utils;
 using ScaleformUI;
 using ScaleformUI.Menu;
@@ -51,6 +52,77 @@ namespace RecM.Client.Menus
         #endregion
 
         #region Tools
+
+        private static void RefreshActiveSessionsMenu(UIMenu menu)
+        {
+            menu.Clear();
+
+            var sessions = PlaybackSessionManager.Sessions;
+            if (sessions.Count == 0)
+            {
+                var emptyItem = new UIMenuItem("No active sessions", "There are no playback sessions running.") { Enabled = false };
+                menu.AddItem(emptyItem);
+                return;
+            }
+
+            foreach (var session in sessions)
+            {
+                var status = PlaybackSessionManager.GetStatusText(session);
+                var descriptionBuilder = new StringBuilder();
+                descriptionBuilder.AppendLine($"Status: {status}");
+                if (session.Vehicle != null && session.Vehicle.Exists())
+                    descriptionBuilder.AppendLine($"Vehicle: {session.Vehicle.DisplayName}");
+                else if (!string.IsNullOrEmpty(session.VehicleModel))
+                    descriptionBuilder.AppendLine($"Vehicle: {session.VehicleModel}");
+
+                if (session.StartPosition != null)
+                {
+                    var start = session.StartPosition.Value;
+                    descriptionBuilder.AppendLine($"Origin: {start.X:F2}, {start.Y:F2}, {start.Z:F2}");
+                }
+
+                var displayName = string.IsNullOrWhiteSpace(session.DisplayName) ? session.RecordingName : session.DisplayName;
+                var item = new UIMenuItem(displayName, descriptionBuilder.ToString().Trim());
+                item.SetRightLabel(session.IsPlayerControlled ? "Player" : "Autonomous");
+                var capturedSession = session;
+                item.Activated += async (sender, e) =>
+                {
+                    if (capturedSession.IsPlayerControlled)
+                        await Recording.StopRecordingPlayback();
+                    else
+                        await PlaybackSessionManager.StopSession(capturedSession.Id, PlaybackStopReason.Cancelled);
+
+                    RefreshActiveSessionsMenu(menu);
+                };
+
+                menu.AddItem(item);
+            }
+        }
+
+        private static void OpenPlaybackModeMenu(UIMenu parentMenu, string displayName, int recordingId, string recordingName, string model = null, Vector4? pos = null)
+        {
+            var optionsMenu = new UIMenu(displayName, "Playback Options");
+            optionsMenu.ParentMenu = parentMenu;
+            optionsMenu.ControlDisablingEnabled = false;
+
+            var takeControlItem = new UIMenuItem("Take Control", "Spawn or reuse your vehicle and play the recording from the driver's seat.");
+            takeControlItem.Activated += async (sender, e) =>
+            {
+                await Recording.PlayRecording(recordingId, recordingName, model, pos, true, false, displayName);
+            };
+            optionsMenu.AddItem(takeControlItem);
+
+            var autonomousItem = new UIMenuItem("Spawn Autonomous", "Spawn a networked vehicle with a dummy driver to replay this recording independently.");
+            autonomousItem.Activated += async (sender, e) =>
+            {
+                var session = await Recording.PlayRecording(recordingId, recordingName, model, pos, false, true, displayName);
+                if (session != null)
+                    $"Started autonomous playback for {displayName}.".Log(true);
+            };
+            optionsMenu.AddItem(autonomousItem);
+
+            parentMenu.SwitchTo(optionsMenu, inheritOldMenuParams: true);
+        }
 
         #region Create menu
 
@@ -206,6 +278,21 @@ namespace RecM.Client.Menus
                 sender.SwitchTo(customRecordingsMenu, inheritOldMenuParams: true, newMenuCurrentSelection: _lastCustomRecordingsMenuIndex);
             };
 
+            UIMenuItem sessionsMenuItem = new UIMenuItem("Active Sessions", "View and manage current playback sessions.");
+            sessionsMenuItem.SetRightLabel("→→→");
+            savedRecordingsMenu.AddItem(sessionsMenuItem);
+            UIMenu sessionsMenu = new UIMenu("Active Sessions", "Playback Sessions");
+            sessionsMenu.ControlDisablingEnabled = false;
+            sessionsMenu.OnMenuOpen += (menu, data) =>
+            {
+                RefreshActiveSessionsMenu(sessionsMenu);
+            };
+            sessionsMenuItem.Activated += (sender, e) =>
+            {
+                RefreshActiveSessionsMenu(sessionsMenu);
+                sender.SwitchTo(sessionsMenu, inheritOldMenuParams: true);
+            };
+
             menu.OnMenuOpen += async (menu, data) =>
             {
                 savedRecordingsMenuItem.Enabled = false;
@@ -277,7 +364,7 @@ namespace RecM.Client.Menus
                         vanillaRecordingsMenu.InstructionalButtons.Add(stopRecordingBtn);
                         stopRecordingBtn.OnControlSelected += (_) =>
                         {
-                            Recording.StopRecordingPlayback();
+                            _ = Recording.StopRecordingPlayback();
                         };
 
                         var switchPlaybackSpeedNextBtn = new InstructionalButton(Control.FrontendRb, Control.FrontendLs, $"Faster");
@@ -318,7 +405,8 @@ namespace RecM.Client.Menus
                                         return;
                                     }
 
-                                    Recording.PlayRecording(int.Parse(item.Items[index].ToString()), item.Label);
+                                    var selectedId = int.Parse(item.Items[index].ToString());
+                                    OpenPlaybackModeMenu(vanillaRecordingsMenu, item.Label, selectedId, item.Label);
                                 };
                             }
                             else
@@ -378,11 +466,20 @@ namespace RecM.Client.Menus
                                 ((UIMenuDynamicListItem)recordItemMenu.MenuItems.FirstOrDefault(x => x.Label.Equals("Playback Speed"))).CurrentListItem = Recording.GetPlaybackSpeedName();
                             };
 
-                            UIMenuItem playItem = new UIMenuItem("Play", "Play the recording.");
-                            recordItemMenu.AddItem(playItem);
-                            playItem.Activated += async (sender, e) =>
+                            UIMenuItem takeControlItem = new UIMenuItem("Take Control", "Play the recording from your perspective.");
+                            recordItemMenu.AddItem(takeControlItem);
+                            takeControlItem.Activated += async (sender, e) =>
                             {
-                                Recording.PlayRecording(id, $"{name}_{model}_", model, pos);
+                                await Recording.PlayRecording(id, $"{name}_{model}_", model, pos, true, false, name);
+                            };
+
+                            UIMenuItem autonomousItem = new UIMenuItem("Spawn Autonomous", "Spawn a networked vehicle to play this recording autonomously.");
+                            recordItemMenu.AddItem(autonomousItem);
+                            autonomousItem.Activated += async (sender, e) =>
+                            {
+                                var session = await Recording.PlayRecording(id, $"{name}_{model}_", model, pos, false, true, name);
+                                if (session != null)
+                                    $"Started autonomous playback for {name}.".Log(true);
                             };
 
                             var playbackSpeedItem = new UIMenuDynamicListItem("Playback Speed", "Change the playback speed.", Recording.GetPlaybackSpeedName(), async (item, dir) =>
@@ -408,9 +505,9 @@ namespace RecM.Client.Menus
 
                             UIMenuItem stopItem = new UIMenuItem("Stop", "Stop the recording.");
                             recordItemMenu.AddItem(stopItem);
-                            stopItem.Activated += (sender, e) =>
+                            stopItem.Activated += async (sender, e) =>
                             {
-                                Recording.StopRecordingPlayback();
+                                await Recording.StopRecordingPlayback();
                             };
 
                             UIMenuItem deleteItem = new UIMenuItem("~r~Delete", "Delete the recording.");
