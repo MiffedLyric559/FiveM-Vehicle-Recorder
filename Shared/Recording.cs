@@ -118,9 +118,9 @@ namespace RecM
 
         public Recording()
         {
-            Main.Instance.AddEventHandler("RecM:saveRecording:Server", new Action<string, string, string, bool, NetworkCallbackDelegate>(SaveRecording), true);
+            Main.Instance.AddEventHandler("RecM:saveRecording:Server", new Action<string, string, string, string, bool, NetworkCallbackDelegate>(SaveRecording), true);
             Main.Instance.AddEventHandler("RecM:deleteRecording:Server", new Func<Player, string, string, Task<Tuple<bool, string>>>(DeleteRecording));
-            Main.Instance.AddEventHandler("RecM:getRecordings:Server", new Func<Player, Task<Dictionary<string, Vector4>>>(GetRecordings));
+            Main.Instance.AddEventHandler("RecM:getRecordings:Server", new Func<Player, Task<Dictionary<string, RecordingListing>>>(GetRecordings));
             Main.Instance.AddEventHandler("RecM:openMenu:Server", new Func<Player, Task<bool>>(OpenMenu));
 
             // Only at startup
@@ -147,7 +147,7 @@ namespace RecM
 
         #region Save recording
 
-        private void SaveRecording(string name, string model, string data, bool overwrite, NetworkCallbackDelegate cb)
+        private void SaveRecording(string name, string model, string data, string metadataJson, bool overwrite, NetworkCallbackDelegate cb)
         {
             try
             {
@@ -239,11 +239,16 @@ namespace RecM
 
                 // Move it to the recordings resource
                 var recordingsPath = Path.Combine(API.GetResourcePath("RecM_records"), "stream");
+                if (!Directory.Exists(recordingsPath))
+                    Directory.CreateDirectory(recordingsPath);
+
+                string targetBaseName;
                 if (!File.Exists(Path.Combine(recordingsPath, $"{name}_{model}_001.yvr")))
                 {
-                    File.WriteAllBytes(Path.Combine(recordingsPath, $"{name}_{model}_001.yvr"), yvrData);
-                    var cacheString = API.RegisterResourceAsset("RecM_records", $"stream/{name}_{model}_001.yvr");
-                    EventDispatcher.Send(Main.Instance.Clients, "RecM:registerRecording:Client", $"{name}_{model}_001.yvr", cacheString);
+                    targetBaseName = $"{name}_{model}_001";
+                    File.WriteAllBytes(Path.Combine(recordingsPath, $"{targetBaseName}.yvr"), yvrData);
+                    var cacheString = API.RegisterResourceAsset("RecM_records", $"stream/{targetBaseName}.yvr");
+                    EventDispatcher.Send(Main.Instance.Clients, "RecM:registerRecording:Client", $"{targetBaseName}.yvr", cacheString);
                 }
                 else
                 {
@@ -251,19 +256,27 @@ namespace RecM
                     if (overwrite)
                     {
                         // Now if we're here, the file existed, now we need to find the highest number and add 1 to it
-                        var maxValue = Directory.EnumerateFiles(recordingsPath)
+                        var maxValue = Directory.EnumerateFiles(recordingsPath, "*.yvr")
                             .Where(x => Path.GetFileNameWithoutExtension(x).StartsWith($"{name}_{model}"))
                             .Select(x => int.Parse(Path.GetFileNameWithoutExtension(x).Split('_')[2]))
+                            .DefaultIfEmpty(0)
                             .Max();
-                        File.WriteAllBytes(Path.Combine(recordingsPath, $"{name}_{model}_{(maxValue + 1).ToString().PadLeft(3, '0')}.yvr"), yvrData);
-                        var cacheString = API.RegisterResourceAsset("RecM_records", $"stream/{name}_{model}_{(maxValue + 1).ToString().PadLeft(3, '0')}.yvr");
-                        EventDispatcher.Send(Main.Instance.Clients, "RecM:registerRecording:Client", $"{name}_{model}_{(maxValue + 1).ToString().PadLeft(3, '0')}.yvr", cacheString);
+
+                        targetBaseName = $"{name}_{model}_{(maxValue + 1).ToString().PadLeft(3, '0')}";
+                        File.WriteAllBytes(Path.Combine(recordingsPath, $"{targetBaseName}.yvr"), yvrData);
+                        var cacheString = API.RegisterResourceAsset("RecM_records", $"stream/{targetBaseName}.yvr");
+                        EventDispatcher.Send(Main.Instance.Clients, "RecM:registerRecording:Client", $"{targetBaseName}.yvr", cacheString);
                     }
                     else
                     {
                         cb(false, "A recording with this name and model already exists.");
                         return;
                     }
+                }
+
+                if (!string.IsNullOrWhiteSpace(metadataJson))
+                {
+                    File.WriteAllText(Path.Combine(recordingsPath, $"{targetBaseName}.json"), metadataJson);
                 }
 
                 // Callback telling the client that the recording was saved
@@ -316,7 +329,7 @@ namespace RecM
 
         #region Get recordings
 
-        private async Task<Dictionary<string, Vector4>> GetRecordings([FromSource] Player source)
+        private async Task<Dictionary<string, RecordingListing>> GetRecordings([FromSource] Player source)
         {
             try
             {
@@ -333,8 +346,8 @@ namespace RecM
                     Directory.CreateDirectory(recordingsPath);
 
                 // For custom recordings, find all files that start with the name and model
-                Dictionary<string, Vector4> recordings = [];
-                foreach (var file in Directory.EnumerateFiles(recordingsPath))
+                Dictionary<string, RecordingListing> recordings = [];
+                foreach (var file in Directory.EnumerateFiles(recordingsPath, "*.yvr"))
                 {
                     // Just to be safe
                     if (!Path.GetFileNameWithoutExtension(file).Contains("_"))
@@ -343,7 +356,7 @@ namespace RecM
                     var name = Path.GetFileNameWithoutExtension(file).Split('_')[0];
                     var model = Path.GetFileNameWithoutExtension(file).Split('_')[1];
                     var id = Path.GetFileNameWithoutExtension(file).Split('_')[2];
-                    var maxValue = Directory.EnumerateFiles(recordingsPath)
+                    var maxValue = Directory.EnumerateFiles(recordingsPath, "*.yvr")
                         .Where(x => Path.GetFileNameWithoutExtension(x).StartsWith($"{name}_{model}"))
                         .Select(x => int.Parse(Path.GetFileNameWithoutExtension(x).Split('_')[2]))
                         .Max();
@@ -375,7 +388,21 @@ namespace RecM
 
                     // Disregard the duplicates that are below the highest id
                     if (id == maxValue.ToString().PadLeft(3, '0'))
-                        recordings.Add(Path.GetFileNameWithoutExtension(file), new Vector4(pos, heading));
+                    {
+                        RecordingMetadata metadata = null;
+                        var metadataPath = Path.Combine(recordingsPath, $"{Path.GetFileNameWithoutExtension(file)}.json");
+                        if (File.Exists(metadataPath))
+                        {
+                            var metadataContent = File.ReadAllText(metadataPath);
+                            metadata = Json.Parse<RecordingMetadata>(metadataContent);
+                        }
+
+                        recordings.Add(Path.GetFileNameWithoutExtension(file), new RecordingListing
+                        {
+                            StartPosition = new Vector4(pos, heading),
+                            Metadata = metadata
+                        });
+                    }
                 }
 
                 return recordings;
@@ -587,6 +614,236 @@ namespace RecM
 
         #region Save recording
 
+        private static RecordingMetadata CaptureRecordingMetadata(Vehicle vehicle, Ped driver)
+        {
+            if (vehicle == null || !vehicle.Exists())
+                return null;
+
+            RecordingMetadata metadata = new()
+            {
+                Vehicle = new VehicleMetadata(),
+                Driver = null
+            };
+
+            var vehicleData = metadata.Vehicle;
+
+            vehicleData.PlateText = API.GetVehicleNumberPlateText(vehicle.Handle);
+            vehicleData.PlateStyle = API.GetVehicleNumberPlateTextIndex(vehicle.Handle);
+            vehicleData.WindowTint = API.GetVehicleWindowTint(vehicle.Handle);
+            vehicleData.WheelType = API.GetVehicleWheelType(vehicle.Handle);
+
+            int primaryColor = 0, secondaryColor = 0;
+            API.GetVehicleColours(vehicle.Handle, ref primaryColor, ref secondaryColor);
+            vehicleData.PrimaryColor = primaryColor;
+            vehicleData.SecondaryColor = secondaryColor;
+
+            int pearlescentColor = 0, wheelColor = 0;
+            API.GetVehicleExtraColours(vehicle.Handle, ref pearlescentColor, ref wheelColor);
+            vehicleData.PearlescentColor = pearlescentColor;
+            vehicleData.WheelColor = wheelColor;
+
+            int dashboardColor = 0;
+            if (API.GetVehicleDashboardColour(vehicle.Handle, ref dashboardColor))
+                vehicleData.DashboardColor = dashboardColor;
+
+            int interiorColor = 0;
+            if (API.GetVehicleInteriorColour(vehicle.Handle, ref interiorColor))
+                vehicleData.InteriorColor = interiorColor;
+
+            vehicleData.HasCustomPrimaryColor = API.GetIsVehiclePrimaryColourCustom(vehicle.Handle);
+            if (vehicleData.HasCustomPrimaryColor)
+            {
+                int r = 0, g = 0, b = 0;
+                API.GetVehicleCustomPrimaryColour(vehicle.Handle, ref r, ref g, ref b);
+                vehicleData.CustomPrimaryColor = [r, g, b];
+            }
+
+            vehicleData.HasCustomSecondaryColor = API.GetIsVehicleSecondaryColourCustom(vehicle.Handle);
+            if (vehicleData.HasCustomSecondaryColor)
+            {
+                int r = 0, g = 0, b = 0;
+                API.GetVehicleCustomSecondaryColour(vehicle.Handle, ref r, ref g, ref b);
+                vehicleData.CustomSecondaryColor = [r, g, b];
+            }
+
+            vehicleData.Livery = API.GetVehicleLivery(vehicle.Handle);
+            vehicleData.RoofLivery = API.GetVehicleRoofLivery(vehicle.Handle);
+
+            bool[] neonEnabled = new bool[4];
+            for (int i = 0; i < neonEnabled.Length; i++)
+                neonEnabled[i] = API.IsVehicleNeonLightEnabled(vehicle.Handle, i);
+            vehicleData.NeonEnabled = neonEnabled;
+
+            int neonR = 0, neonG = 0, neonB = 0;
+            API.GetVehicleNeonLightsColour(vehicle.Handle, ref neonR, ref neonG, ref neonB);
+            vehicleData.NeonColor = [neonR, neonG, neonB];
+
+            for (int extraId = 0; extraId <= 20; extraId++)
+            {
+                if (API.DoesExtraExist(vehicle.Handle, extraId))
+                    vehicleData.Extras[extraId] = API.IsVehicleExtraTurnedOn(vehicle.Handle, extraId);
+            }
+
+            // Ensure the mod kit is set so the data can be read properly
+            API.SetVehicleModKit(vehicle.Handle, 0);
+
+            for (int modType = 0; modType <= 49; modType++)
+            {
+                int available = API.GetNumVehicleMods(vehicle.Handle, modType);
+                if (available <= 0 && API.GetVehicleMod(vehicle.Handle, modType) == -1)
+                    continue;
+
+                int modIndex = API.GetVehicleMod(vehicle.Handle, modType);
+                vehicleData.Mods[modType] = modIndex;
+
+                bool hasVariation = API.GetVehicleModVariation(vehicle.Handle, modType);
+                if (hasVariation)
+                    vehicleData.ModVariations[modType] = true;
+            }
+
+            int[] toggleMods = [17, 18, 19, 20, 21, 22];
+            foreach (var toggleMod in toggleMods)
+                vehicleData.ModToggles[toggleMod] = API.IsToggleModOn(vehicle.Handle, toggleMod);
+
+            if (driver != null && driver.Exists())
+            {
+                PedMetadata pedMetadata = new()
+                {
+                    Model = (uint)driver.Model.Hash
+                };
+
+                for (int component = 0; component < 12; component++)
+                {
+                    pedMetadata.Components.Add(new PedComponentMetadata
+                    {
+                        Id = component,
+                        Drawable = API.GetPedDrawableVariation(driver.Handle, component),
+                        Texture = API.GetPedTextureVariation(driver.Handle, component),
+                        Palette = API.GetPedPaletteVariation(driver.Handle, component)
+                    });
+                }
+
+                for (int prop = 0; prop < 8; prop++)
+                {
+                    int drawable = API.GetPedPropIndex(driver.Handle, prop);
+                    int texture = drawable >= 0 ? API.GetPedPropTextureIndex(driver.Handle, prop) : 0;
+
+                    pedMetadata.Props.Add(new PedPropMetadata
+                    {
+                        Id = prop,
+                        Drawable = drawable,
+                        Texture = texture
+                    });
+                }
+
+                metadata.Driver = pedMetadata;
+            }
+
+            return metadata;
+        }
+
+        private static void ApplyVehicleMetadata(Vehicle vehicle, RecordingMetadata metadata)
+        {
+            if (vehicle == null || !vehicle.Exists() || metadata?.Vehicle == null)
+                return;
+
+            var vehicleData = metadata.Vehicle;
+
+            API.SetVehicleModKit(vehicle.Handle, 0);
+
+            if (!string.IsNullOrEmpty(vehicleData.PlateText))
+                API.SetVehicleNumberPlateText(vehicle.Handle, vehicleData.PlateText);
+            API.SetVehicleNumberPlateTextIndex(vehicle.Handle, vehicleData.PlateStyle);
+
+            API.SetVehicleWheelType(vehicle.Handle, vehicleData.WheelType);
+            API.SetVehicleWindowTint(vehicle.Handle, vehicleData.WindowTint);
+
+            API.SetVehicleColours(vehicle.Handle, vehicleData.PrimaryColor, vehicleData.SecondaryColor);
+            API.SetVehicleExtraColours(vehicle.Handle, vehicleData.PearlescentColor, vehicleData.WheelColor);
+
+            if (vehicleData.DashboardColor.HasValue)
+                API.SetVehicleDashboardColour(vehicle.Handle, vehicleData.DashboardColor.Value);
+
+            if (vehicleData.InteriorColor.HasValue)
+                API.SetVehicleInteriorColour(vehicle.Handle, vehicleData.InteriorColor.Value);
+
+            if (vehicleData.HasCustomPrimaryColor && vehicleData.CustomPrimaryColor?.Length == 3)
+                API.SetVehicleCustomPrimaryColour(vehicle.Handle, vehicleData.CustomPrimaryColor[0], vehicleData.CustomPrimaryColor[1], vehicleData.CustomPrimaryColor[2]);
+            else
+                API.ClearVehicleCustomPrimaryColour(vehicle.Handle);
+
+            if (vehicleData.HasCustomSecondaryColor && vehicleData.CustomSecondaryColor?.Length == 3)
+                API.SetVehicleCustomSecondaryColour(vehicle.Handle, vehicleData.CustomSecondaryColor[0], vehicleData.CustomSecondaryColor[1], vehicleData.CustomSecondaryColor[2]);
+            else
+                API.ClearVehicleCustomSecondaryColour(vehicle.Handle);
+
+            if (vehicleData.Livery.HasValue && vehicleData.Livery.Value >= 0)
+                API.SetVehicleLivery(vehicle.Handle, vehicleData.Livery.Value);
+
+            if (vehicleData.RoofLivery.HasValue && vehicleData.RoofLivery.Value >= 0)
+                API.SetVehicleRoofLivery(vehicle.Handle, vehicleData.RoofLivery.Value);
+
+            if (vehicleData.NeonColor?.Length == 3)
+                API.SetVehicleNeonLightsColour(vehicle.Handle, vehicleData.NeonColor[0], vehicleData.NeonColor[1], vehicleData.NeonColor[2]);
+
+            if (vehicleData.NeonEnabled != null)
+            {
+                for (int i = 0; i < vehicleData.NeonEnabled.Length; i++)
+                    API.SetVehicleNeonLightEnabled(vehicle.Handle, i, vehicleData.NeonEnabled[i]);
+            }
+
+            if (vehicleData.Extras != null)
+            {
+                foreach (var extra in vehicleData.Extras)
+                    API.SetVehicleExtra(vehicle.Handle, extra.Key, !extra.Value);
+            }
+
+            if (vehicleData.Mods != null)
+            {
+                foreach (var mod in vehicleData.Mods)
+                {
+                    if (mod.Value >= 0)
+                    {
+                        bool variation = vehicleData.ModVariations != null && vehicleData.ModVariations.TryGetValue(mod.Key, out bool hasVariation) && hasVariation;
+                        API.SetVehicleMod(vehicle.Handle, mod.Key, mod.Value, variation);
+                    }
+                    else
+                    {
+                        API.RemoveVehicleMod(vehicle.Handle, mod.Key);
+                    }
+                }
+            }
+
+            if (vehicleData.ModToggles != null)
+            {
+                foreach (var toggle in vehicleData.ModToggles)
+                    API.ToggleVehicleMod(vehicle.Handle, toggle.Key, toggle.Value);
+            }
+        }
+
+        internal static void ApplyPedMetadata(Ped ped, PedMetadata metadata)
+        {
+            if (ped == null || !ped.Exists() || metadata == null)
+                return;
+
+            if (metadata.Components != null)
+            {
+                foreach (var component in metadata.Components)
+                    API.SetPedComponentVariation(ped.Handle, component.Id, component.Drawable, component.Texture, component.Palette);
+            }
+
+            if (metadata.Props != null)
+            {
+                foreach (var prop in metadata.Props)
+                {
+                    if (prop.Drawable < 0)
+                        API.ClearPedProp(ped.Handle, prop.Id);
+                    else
+                        API.SetPedPropIndex(ped.Handle, prop.Id, prop.Drawable, prop.Texture, true);
+                }
+            }
+        }
+
         public static async Task<bool> SaveRecording(string name, bool overwrite = false)
         {
             if (_currRecording.Count == 0)
@@ -603,8 +860,11 @@ namespace RecM
             // Create a TaskCompletionSource to await the event completion
             var tcs = new TaskCompletionSource<bool>();
 
+            var metadata = CaptureRecordingMetadata(veh, Game.PlayerPed);
+            var metadataJson = Json.Stringify(metadata) ?? string.Empty;
+
             // Latent event that sends little increments of data to the server
-            BaseScript.TriggerLatentServerEvent("RecM:saveRecording:Server", 200000, name, veh.DisplayName, Json.Stringify(_currRecording), overwrite, new Action<bool, string>((success, msg) =>
+            BaseScript.TriggerLatentServerEvent("RecM:saveRecording:Server", 200000, name, veh.DisplayName, Json.Stringify(_currRecording), metadataJson, overwrite, new Action<bool, string>((success, msg) =>
             {
                 if (!success)
                 {
@@ -675,7 +935,7 @@ namespace RecM
 
         #region Get recordings
 
-        public static async Task<Tuple<List<string>, Dictionary<string, Vector4>>> GetRecordings()
+        public static async Task<Tuple<List<string>, Dictionary<string, RecordingListing>>> GetRecordings()
         {
             // Declare the list that will hold the recordings
             List<string> vanilla = [];
@@ -693,16 +953,16 @@ namespace RecM
             }
 
             // Get the list of custom recordings
-            var custom = await EventDispatcher.Get<Dictionary<string, Vector4>>("RecM:getRecordings:Server");
+            var custom = await EventDispatcher.Get<Dictionary<string, RecordingListing>>("RecM:getRecordings:Server");
 
-            return new Tuple<List<string>, Dictionary<string, Vector4>>(vanilla, custom);
+            return new Tuple<List<string>, Dictionary<string, RecordingListing>>(vanilla, custom);
         }
 
         #endregion
 
         #region Play recording
 
-        public async static Task<PlaybackSession> PlayRecording(int id, string name, string model = null, Vector4? pos = null, bool takeControl = true, bool spawnDummyDriver = false, string displayName = null)
+        public async static Task<PlaybackSession> PlayRecording(int id, string name, string model = null, Vector4? pos = null, bool takeControl = true, bool spawnDummyDriver = false, string displayName = null, RecordingMetadata metadata = null)
         {
             PlaybackSession session = null;
             try
@@ -824,6 +1084,8 @@ namespace RecM
                     _isPlaybackCheckerAttached = true;
                 }
 
+                ApplyVehicleMetadata(veh, metadata);
+
                 // Load the recording with a function call, because the FiveM native doesn't take the name parameter
                 API.RequestVehicleRecording(id, name);
                 var currTime = Main.GameTime;
@@ -874,7 +1136,7 @@ namespace RecM
                 }
 
                 if (!takeControl && spawnDummyDriver)
-                    session.DummyDriver = await PlaybackSessionManager.CreateDummyDriver(session.Vehicle);
+                    session.DummyDriver = await PlaybackSessionManager.CreateDummyDriver(session.Vehicle, metadata);
 
                 PlaybackSessionManager.AddSession(session);
 
@@ -1118,10 +1380,7 @@ namespace RecM
                 // The path to the recordings
                 var recordingsPath = Path.Combine(API.GetResourcePath("RecM_records"), "stream");
 
-                // Find all files that are older than the current
-                List<string> filesToKeep = [];
-                List<string> filesToDestroy = [];
-                foreach (var file in Directory.EnumerateFiles(recordingsPath))
+                foreach (var file in Directory.EnumerateFiles(recordingsPath, "*.yvr"))
                 {
                     // Just to be safe
                     if (!Path.GetFileNameWithoutExtension(file).Contains("_"))
@@ -1130,21 +1389,45 @@ namespace RecM
                     var name = Path.GetFileNameWithoutExtension(file).Split('_')[0];
                     var model = Path.GetFileNameWithoutExtension(file).Split('_')[1];
                     var id = Path.GetFileNameWithoutExtension(file).Split('_')[2];
-                    var maxValue = Directory.EnumerateFiles(recordingsPath)
+                    var maxValue = Directory.EnumerateFiles(recordingsPath, "*.yvr")
                         .Where(x => Path.GetFileNameWithoutExtension(x).StartsWith($"{name}_{model}"))
                         .Select(x => int.Parse(Path.GetFileNameWithoutExtension(x).Split('_')[2]))
                         .DefaultIfEmpty(0)
                         .Max();
 
+                    var metadataPath = Path.Combine(Path.GetDirectoryName(file), $"{Path.GetFileNameWithoutExtension(file)}.json");
+
                     // Delete the file if there's a duplicate with a lower recording id
                     if (id != maxValue.ToString().PadLeft(3, '0'))
                     {
                         File.Delete(file);
+                        if (File.Exists(metadataPath))
+                            File.Delete(metadataPath);
                         continue;
                     }
 
                     // Otherwise, rename the file to the lowest recording id value
-                    File.Move(file, Path.Combine(Path.GetDirectoryName(file), $"{name}_{model}_001.yvr"));
+                    var targetBaseName = $"{name}_{model}_001";
+                    var targetFile = Path.Combine(Path.GetDirectoryName(file), $"{targetBaseName}.yvr");
+                    if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (File.Exists(targetFile))
+                            File.Delete(targetFile);
+
+                        File.Move(file, targetFile);
+                    }
+
+                    if (File.Exists(metadataPath))
+                    {
+                        var targetMetadataPath = Path.Combine(Path.GetDirectoryName(metadataPath), $"{targetBaseName}.json");
+                        if (!metadataPath.Equals(targetMetadataPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (File.Exists(targetMetadataPath))
+                                File.Delete(targetMetadataPath);
+
+                            File.Move(metadataPath, targetMetadataPath);
+                        }
+                    }
                 }
 
                 // Finally, refresh and ensure the recordings resource

@@ -28,7 +28,7 @@ namespace RecM.Client.Menus
         private static UIMenuItem _saveRecordingMenuItem;
         private static UIMenuItem _createRecordingsMenuItem;
         private static List<string> _lastVanillaRecordings = null;
-        private static Dictionary<string, Vector4> _lastCustomRecordings = null;
+        private static Dictionary<string, RecordingListing> _lastCustomRecordings = null;
         private static int _lastVanillaRecordingsMenuIndex;
         private static int _lastCustomRecordingsMenuIndex;
         public static InstructionalButton SwitchPlaybackSpeedDisplayBtn;
@@ -99,7 +99,32 @@ namespace RecM.Client.Menus
             }
         }
 
-        private static void OpenPlaybackModeMenu(UIMenu parentMenu, string displayName, int recordingId, string recordingName, string model = null, Vector4? pos = null)
+        private static bool ShouldRefreshCustomRecordings(Dictionary<string, RecordingListing> previous, Dictionary<string, RecordingListing> current)
+        {
+            if (current == null)
+                return false;
+
+            if (previous == null || previous.Count != current.Count)
+                return true;
+
+            foreach (var kvp in current)
+            {
+                if (!previous.TryGetValue(kvp.Key, out var previousListing))
+                    return true;
+
+                if (!previousListing.StartPosition.Equals(kvp.Value.StartPosition))
+                    return true;
+
+                var previousMetadata = Json.Stringify(previousListing.Metadata) ?? string.Empty;
+                var currentMetadata = Json.Stringify(kvp.Value.Metadata) ?? string.Empty;
+                if (!previousMetadata.Equals(currentMetadata, StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static void OpenPlaybackModeMenu(UIMenu parentMenu, string displayName, int recordingId, string recordingName, string model = null, Vector4? pos = null, RecordingMetadata metadata = null)
         {
             var optionsMenu = new UIMenu(displayName, "Playback Options");
             optionsMenu.ParentMenu = parentMenu;
@@ -108,14 +133,14 @@ namespace RecM.Client.Menus
             var takeControlItem = new UIMenuItem("Take Control", "Spawn or reuse your vehicle and play the recording from the driver's seat.");
             takeControlItem.Activated += async (sender, e) =>
             {
-                await Recording.PlayRecording(recordingId, recordingName, model, pos, true, false, displayName);
+                await Recording.PlayRecording(recordingId, recordingName, model, pos, true, false, displayName, metadata);
             };
             optionsMenu.AddItem(takeControlItem);
 
             var autonomousItem = new UIMenuItem("Spawn Autonomous", "Spawn a networked vehicle with a dummy driver to replay this recording independently.");
             autonomousItem.Activated += async (sender, e) =>
             {
-                var session = await Recording.PlayRecording(recordingId, recordingName, model, pos, false, true, displayName);
+                var session = await Recording.PlayRecording(recordingId, recordingName, model, pos, false, true, displayName, metadata);
                 if (session != null)
                     $"Started autonomous playback for {displayName}.".Log(true);
             };
@@ -299,7 +324,8 @@ namespace RecM.Client.Menus
                 savedRecordingsMenuItem.Description = "Loading...";
 
                 // Get the recordings
-                (List<string> vanilla, Dictionary<string, Vector4> custom) = await Recording.GetRecordings();
+                (List<string> vanilla, Dictionary<string, RecordingListing> custom) = await Recording.GetRecordings();
+                custom ??= [];
 
                 savedRecordingsMenuItem.Enabled = true;
                 savedRecordingsMenuItem.Description = "This menu contains all the saved recordings.";
@@ -434,7 +460,7 @@ namespace RecM.Client.Menus
 
                 #region Custom recordings
 
-                if (_lastCustomRecordings == null || !_lastCustomRecordings.SequenceEqual(custom))
+                if (ShouldRefreshCustomRecordings(_lastCustomRecordings, custom))
                 {
                     _lastCustomRecordingsMenuIndex = 0;
                     _lastCustomRecordings = custom;
@@ -450,7 +476,9 @@ namespace RecM.Client.Menus
                             var name = recording.Key.Split('_')[0];
                             var model = recording.Key.Split('_')[1];
                             var id = int.Parse(recording.Key.Split('_')[2]);
-                            var pos = recording.Value;
+                            var listing = recording.Value;
+                            Vector4? pos = listing != null ? listing.StartPosition : null;
+                            var metadata = listing?.Metadata;
 
                             UIMenuItem recordItem = new UIMenuItem(name, $"Vehicle: {model}\nID: {id}");
                             recordItem.ItemData = recording;
@@ -470,14 +498,14 @@ namespace RecM.Client.Menus
                             recordItemMenu.AddItem(takeControlItem);
                             takeControlItem.Activated += async (sender, e) =>
                             {
-                                await Recording.PlayRecording(id, $"{name}_{model}_", model, pos, true, false, name);
+                                await Recording.PlayRecording(id, $"{name}_{model}_", model, pos, true, false, name, metadata);
                             };
 
                             UIMenuItem autonomousItem = new UIMenuItem("Spawn Autonomous", "Spawn a networked vehicle to play this recording autonomously.");
                             recordItemMenu.AddItem(autonomousItem);
                             autonomousItem.Activated += async (sender, e) =>
                             {
-                                var session = await Recording.PlayRecording(id, $"{name}_{model}_", model, pos, false, true, name);
+                                var session = await Recording.PlayRecording(id, $"{name}_{model}_", model, pos, false, true, name, metadata);
                                 if (session != null)
                                     $"Started autonomous playback for {name}.".Log(true);
                             };

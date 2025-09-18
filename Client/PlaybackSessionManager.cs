@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using CitizenFX.Core;
 using CitizenFX.Core.Native;
+using RecM;
 using RecM.Client.Utils;
 
 namespace RecM.Client
@@ -100,12 +101,23 @@ namespace RecM.Client
             return vehicle;
         }
 
-        public static async Task<Ped> CreateDummyDriver(Vehicle vehicle)
+        public static async Task<Ped> CreateDummyDriver(Vehicle vehicle, RecordingMetadata metadata = null)
         {
             if (vehicle == null || !vehicle.Exists())
                 return null;
 
-            var pedModel = new Model(PedHash.AirworkerSMY);
+            Model pedModel;
+            if (metadata?.Driver != null && metadata.Driver.Model != 0)
+            {
+                pedModel = new Model((int)metadata.Driver.Model);
+                if (!pedModel.IsValid || !pedModel.IsPed)
+                    pedModel = new Model(PedHash.AirworkerSMY);
+            }
+            else
+            {
+                pedModel = new Model(PedHash.AirworkerSMY);
+            }
+
             if (!await pedModel.Request(10000))
                 return null;
 
@@ -119,6 +131,9 @@ namespace RecM.Client
             ped.Model.MarkAsNoLongerNeeded();
             ped.SetIntoVehicle(vehicle, VehicleSeat.Driver);
             ped.BlockPermanentEvents = true;
+
+            if (metadata?.Driver != null)
+                Recording.ApplyPedMetadata(ped, metadata.Driver);
 
             return ped;
         }
