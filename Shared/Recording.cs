@@ -1188,7 +1188,9 @@ namespace RecM
         public static async Task<bool> DeleteRecording(string name, string model)
         {
             // Latent event that sends little increments of data to the server
-            (bool success, string msg) = await EventDispatcher.Get<Tuple<bool, string>>("RecM:deleteRecording:Server", name, model);
+            var response = await EventDispatcher.Get<Tuple<bool, string>>("RecM:deleteRecording:Server", name, model);
+            var success = response.Item1;
+            var msg = response.Item2;
             if (!success)
             {
                 msg.Error(true);
