@@ -1102,7 +1102,7 @@ namespace RecM
                         Main.Instance.DetachTick(RecordingCheckerThread);
                         _isPlaybackCheckerAttached = false;
                     }
-                    return;
+                    return null;
                 }
 
                 // Save the player's last position only if the last recording has stopped playing or the last location hasn't been stored
